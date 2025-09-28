@@ -1,0 +1,60 @@
+com.midas.core.listener
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Component
+public class MidasTransactionListener {
+
+    private static final Logger log = LoggerFactory.getLogger(MidasTransactionListener.class);
+    private final List<Double> recordedAmounts = new ArrayList<>();
+    private static final int MAX_RECORDINGS = 4;
+
+    // Use the configurable property for the topic name
+    @KafkaListener(topics = "${midas.kafka.transaction-topic}", groupId = "midas-core-group")
+    public void listen(Transaction transaction) {
+        // The Transaction object is automatically created (deserialized) by Spring Kafka.
+
+        // **TASK STEP: Record the amounts of the first four transactions.**
+        synchronized (recordedAmounts) {
+            if (recordedAmounts.size() < MAX_RECORDINGS) {
+                // Assuming your Transaction class has a getAmount() method returning a Double/BigDecimal
+                double amount = transaction.getAmount(); 
+                recordedAmounts.add(amount);
+                log.info("Transaction received ({} of {}): Amount = {}", recordedAmounts.size(), MAX_RECORDINGS, amount);
+
+                if (recordedAmounts.size() == MAX_RECORDINGS) {
+                    log.warn("🚨 First Four Amounts Captured: {}", recordedAmounts);
+                    // You might add a mechanism here to stop the listener or set a flag 
+                    // if necessary, but simply logging is sufficient for the task.
+                }
+            }
+        }
+        
+        // Per the requirement, NO further processing is needed at this stage.
+    }
+}
+# 1. Define the topic name property (if it doesn't already exist)
+midas:
+  kafka:
+    transaction-topic: "midas.core.transaction.topic" # Use the actual topic name
+
+# 2. Configure the consumer defaults
+spring:
+  kafka:
+    consumer:
+      group-id: midas-core-group # Matches the groupId in the @KafkaListener
+      
+      # Assuming string keys and JSON values
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      
+      # Necessary for JSON deserialization of custom types
+      properties:
+        # **Set the fully qualified class name (FQN) for the Transaction object**
+        # REPLACE 'com.midas.core.model.Transaction' with your actual class path
+        spring.json.value.default.type: com.midas.core.model.Transaction
+        
+        # This is a security feature; '*' allows deserialization of any package
+        spring.json.trusted.packages: "*"
